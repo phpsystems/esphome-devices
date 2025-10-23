@@ -51,7 +51,7 @@ light:
     name: led_strip
     id: led_strip
     pin: GPIO15
-    num_leds: 95
+    num_leds: 50
     pio: 0
     rgb_order: RGB
     chipset: WS2812
