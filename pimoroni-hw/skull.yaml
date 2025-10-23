@@ -1,0 +1,243 @@
+esphome:
+  name: skull
+  friendly_name: skull
+  on_boot:
+    priority: 700
+    then:
+      - light.turn_on: led_strip
+      - lambda: |-
+          auto call = id(led_strip).make_call();
+          call.set_effect("Rainbow2");
+          call.perform();
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "<your api key>"
+
+ota:
+  - platform: esphome
+    password: "<your ota key>"
+
+rp2040:
+  board: rpipicow
+#  framework:
+#    platform_version: https://github.com/maxgerhardt/platform-raspberrypi.git
+
+# Enable logging
+logger:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Skull Fallback Hotspot"
+    password: "0d0GqMPLyuAp"
+
+#captive_portal:
+
+output:
+  - platform: gpio
+    pin:
+      number: 25
+      mode: output
+    id: LED
+
+
+light:
+  - platform: rp2040_pio_led_strip
+    name: led_strip
+    id: led_strip
+    pin: GPIO15
+    num_leds: 95
+    pio: 0
+    rgb_order: RGB
+    chipset: WS2812
+    effects:
+      # Use default parameters:
+      - random:
+          name: "Random Effect"
+      - strobe:
+          name: "Strobe Effect"
+      - flicker:
+          name: "Flicker Effect" 
+      - addressable_rainbow:
+          name: "Addressable Rainbow"
+      - addressable_color_wipe:
+          name: "Addressable Color Wipe" 
+      - addressable_scan:
+          name: "Addressable Scan"
+          scan_width: 5
+          move_interval: 50ms
+      - addressable_twinkle:
+          name: "Addressable Twinkle"
+      - addressable_fireworks:
+          name: Fireworks
+          use_random_color: True
+          spark_probability: 15%
+      - addressable_flicker:
+          name: Flicker2
+      - addressable_rainbow:
+          name: Rainbow2
+          speed: 20
+          width: 50
+      - addressable_color_wipe:
+          name: ColorWipe
+          colors:
+            - red: 100%
+              green: 100%
+              blue: 100%
+              num_leds: 15
+              gradient: true
+            - red: 0%
+              green: 0%
+              blue: 0%
+              num_leds: 95
+          add_led_interval: 50ms
+          reverse: false
+
+# Global variable to store current effect index
+globals:
+  - id: effect_index
+    type: int
+    restore_value: yes
+    initial_value: '10'
+
+script:
+  - id: cycle_effect
+    mode: restart
+    then:
+      - lambda: |-
+          static const std::vector<std::string> effects = {
+            "Random Effect", "Strobe Effect", "Flicker Effect", "Addressable Rainbow", 
+            "Addressable Color Wipe", "Addressable Scan", "Addressable Twinkle",  
+            "Fireworks", "Flicker2", "Rainbow2", "ColorWipe"
+          };
+          id(effect_index)++;
+          if (id(effect_index) >= effects.size()) {
+            id(effect_index) = 0;
+          }
+          auto effect_name = effects[id(effect_index)];
+          id(led_effect_selector).publish_state(effect_name);
+          auto call = id(led_strip).make_call();
+          call.set_effect(effect_name);
+          call.perform();
+# Virtual button to trigger the script
+button:
+  - platform: template
+    name: "Cycle LED Effect"
+    on_press:
+      then:
+        - script.execute: cycle_effect
+  - platform: restart
+    name: "Skull Restart"
+
+select:
+  - platform: template
+    name: "LED Effect Selector"
+    id: led_effect_selector
+    optimistic: true
+    options:
+      - "Random Effect"
+      - "Strobe Effect"
+      - "Flicker Effect"
+      - "Addressable Rainbow"
+      - "Addressable Color Wipe"
+      - "Addressable Scan"
+      - "Addressable Twinkle"
+      - "Fireworks"
+      - "Flicker2"
+      - "Rainbow2"
+      - "ColorWipe"
+    initial_option: "Addressable Rainbow"
+    on_value:
+      then:
+        - lambda: |-
+            auto call = id(led_strip).make_call();
+            call.set_effect(x);
+            call.perform();
+
+time:
+  - platform: homeassistant
+    id: hatime
+
+i2c:
+  sda: GPIO4  #20
+  scl: GPIO5  #21 
+  scan: true
+  id: bus_a 
+
+## Minimal example configuration with common sensors
+bme68x_bsec2_i2c:
+    address: 0x76
+    model: bme688
+    operating_age: 28d
+    sample_rate: LP
+    supply_voltage: 3.3V
+
+sensor:
+  - platform: bme68x_bsec2
+    temperature:
+      name: "BME68x Temperature"
+    pressure:
+      name: "BME68x Pressure"
+    humidity:
+      name: "BME68x Humidity"
+    iaq:
+      name: "BME68x IAQ"
+      id: iaq
+      on_value:
+        then:
+          - lambda: |-
+              // Turn red if pollution level (IAQ) exceeds 150
+              if (id(iaq).state > 150) {
+                auto call = id(led_strip).make_call();
+                call.set_effect("None");  // stop current effect
+                call.set_rgb(1.0, 0.0, 0.0);  // solid red
+                call.perform();
+              } else {
+                // Restore normal rainbow effect when air quality improves
+                auto call = id(led_strip).make_call();
+                call.set_effect("Rainbow2");
+                call.perform();
+              }
+    co2_equivalent:
+      name: "BME68x CO2 Equivalent"
+    breath_voc_equivalent:
+      name: "BME68x Breath VOC Equivalent"
+
+text_sensor:
+  - platform: bme68x_bsec2
+    iaq_accuracy:
+      name: "BME68x IAQ Accuracy"
+
+  - platform: template
+    name: "BME68x IAQ Classification"
+    lambda: |-
+      if ( int(id(iaq).state) <= 50) {
+        return {"Excellent"};
+      }
+      else if (int(id(iaq).state) >= 51 && int(id(iaq).state) <= 100) {
+        return {"Good"};
+      }
+      else if (int(id(iaq).state) >= 101 && int(id(iaq).state) <= 150) {
+        return {"Lightly polluted"};
+      }
+      else if (int(id(iaq).state) >= 151 && int(id(iaq).state) <= 200) {
+        return {"Moderately polluted"};
+      }
+      else if (int(id(iaq).state) >= 201 && int(id(iaq).state) <= 250) {
+        return {"Heavily polluted"};
+      }
+      else if (int(id(iaq).state) >= 251 && int(id(iaq).state) <= 350) {
+        return {"Severely polluted"};
+      }
+      else if (int(id(iaq).state) >= 351) {
+        return {"Extremely polluted"};
+      }
+      else {
+        return {"error"};
+      }
+
