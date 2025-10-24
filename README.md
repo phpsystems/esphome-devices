@@ -8,4 +8,4 @@ This is for home made esphome projects using the Raspberry PI Pico W and variant
 Esphome configurations for kits that were purchased from Pimoroni. As such, they tend to be for the entire project as is.
 
 ## Featured Blog Posts:
-Coming soon.
+* [Fallout Sign](https://blog.php-systems.com/fallout-sign-with-added-home-assistant/) - [Configuration file](https://github.com/phpsystems/esphome-devices/blob/main/pico-w/fallout.yaml)
