@@ -1,0 +1,160 @@
+esphome:
+  name: fallout-01
+  friendly_name: fallout-01
+  on_boot:
+    priority: 700
+    then:
+      - light.turn_on: led_strip
+      - lambda: |-
+          auto call = id(led_strip).make_call();
+          call.set_effect("Rainbow2");
+          call.perform();
+
+rp2040:
+  board: rpipicow
+#  framework:
+#    platform_version: https://github.com/maxgerhardt/platform-raspberrypi.git
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_password
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Fallout-01 Fallback Hotspot"
+    password: !secret fallback_password
+
+#captive_portal:
+
+output:
+  - platform: gpio
+    pin:
+      number: 25
+      mode: output
+    id: LED
+
+
+light:
+  - platform: rp2040_pio_led_strip
+    name: led_strip
+    id: led_strip
+    pin: GPIO15
+    num_leds: 95
+    pio: 0
+    rgb_order: RGB
+    chipset: WS2812
+    effects:
+      # Use default parameters:
+      - random:
+          name: "Random Effect"
+      - strobe:
+          name: "Strobe Effect"
+      - flicker:
+          name: "Flicker Effect" 
+      - addressable_rainbow:
+          name: "Addressable Rainbow"
+      - addressable_color_wipe:
+          name: "Addressable Color Wipe" 
+      - addressable_scan:
+          name: "Addressable Scan"
+          scan_width: 5
+          move_interval: 50ms
+      - addressable_twinkle:
+          name: "Addressable Twinkle"
+      - addressable_fireworks:
+          name: Fireworks
+          use_random_color: True
+          spark_probability: 15%
+      - addressable_flicker:
+          name: Flicker2
+      - addressable_rainbow:
+          name: Rainbow2
+          speed: 20
+          width: 50
+      - addressable_color_wipe:
+          name: ColorWipe
+          colors:
+            - red: 100%
+              green: 100%
+              blue: 100%
+              num_leds: 15
+              gradient: true
+            - red: 0%
+              green: 0%
+              blue: 0%
+              num_leds: 95
+          add_led_interval: 50ms
+          reverse: false
+
+# Global variable to store current effect index
+globals:
+  - id: effect_index
+    type: int
+    restore_value: yes
+    initial_value: '10'
+
+script:
+  - id: cycle_effect
+    mode: restart
+    then:
+      - lambda: |-
+          static const std::vector<std::string> effects = {
+            "Random Effect", "Strobe Effect", "Flicker Effect", "Addressable Rainbow", 
+            "Addressable Color Wipe", "Addressable Scan", "Addressable Twinkle",  
+            "Fireworks", "Flicker2", "Rainbow2", "ColorWipe"
+          };
+          id(effect_index)++;
+          if (id(effect_index) >= effects.size()) {
+            id(effect_index) = 0;
+          }
+          auto effect_name = effects[id(effect_index)];
+          id(led_effect_selector).publish_state(effect_name);
+          auto call = id(led_strip).make_call();
+          call.set_effect(effect_name);
+          call.perform();
+# Virtual button to trigger the script
+button:
+  - platform: template
+    name: "Cycle LED Effect"
+    on_press:
+      then:
+        - script.execute: cycle_effect
+  - platform: restart
+    name: "Fallout Restart"
+
+select:
+  - platform: template
+    name: "LED Effect Selector"
+    id: led_effect_selector
+    optimistic: true
+    options:
+      - "Random Effect"
+      - "Strobe Effect"
+      - "Flicker Effect"
+      - "Addressable Rainbow"
+      - "Addressable Color Wipe"
+      - "Addressable Scan"
+      - "Addressable Twinkle"
+      - "Fireworks"
+      - "Flicker2"
+      - "Rainbow2"
+      - "ColorWipe"
+    initial_option: "Addressable Rainbow"
+    on_value:
+      then:
+        - lambda: |-
+            auto call = id(led_strip).make_call();
+            call.set_effect(x);
+            call.perform();
